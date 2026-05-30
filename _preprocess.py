@@ -1,10 +1,43 @@
-import os
+import io
 import json
+import os
+import requests
 import pandas as pd
 
 os.makedirs('data', exist_ok=True)
 
-df = pd.read_csv('rawdata/Dinesafe.csv', encoding='utf-8', low_memory=False)
+BASE_URL = "https://ckan0.cf.opendata.inter.prod-toronto.ca"
+
+package = requests.get(
+    BASE_URL + "/api/3/action/package_show",
+    params={"id": "dinesafe"},
+    timeout=30,
+).json()
+
+resource_id = next(
+    r["id"] for r in package["result"]["resources"] if r["datastore_active"]
+)
+
+print(f"Fetching resource {resource_id}...")
+response = requests.get(
+    BASE_URL + "/datastore/dump/" + resource_id,
+    timeout=120,
+)
+response.raise_for_status()
+
+df = pd.read_csv(io.BytesIO(response.content), low_memory=False)
+
+df = df.rename(columns={
+    "Establishment ID": "estId",
+    "Establishment Name": "estName",
+    "Address": "address",
+    "Latitude": "latitude",
+    "Longitude": "longitude",
+    "Inspection Date": "inspectionDate",
+    "Establishment Status": "inspectionStatus",
+})
+
+print(f"Loaded {len(df)} rows")
 
 # One row per unique inspection event (estId + date + status)
 unique_inspections = df[['estId', 'inspectionDate', 'inspectionStatus']].drop_duplicates()
