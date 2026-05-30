@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Toronto Dinesafe Data UI</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body, #map { height: 100%; width: 100%; }
+
+    #legend {
+      position: absolute;
+      bottom: 30px;
+      right: 10px;
+      z-index: 1000;
+      background: white;
+      padding: 10px 14px;
+      border-radius: 6px;
+      box-shadow: 0 1px 5px rgba(0,0,0,0.35);
+      font: 13px/1.6 Arial, sans-serif;
+    }
+    #legend h4 { margin-bottom: 6px; font-size: 13px; }
+    .legend-row { display: flex; align-items: center; gap: 8px; }
+    .legend-dot {
+      width: 14px; height: 14px; border-radius: 50%;
+      flex-shrink: 0; opacity: 0.9;
+    }
+
+    #status-bar {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1000;
+      background: rgba(255,255,255,0.9);
+      padding: 5px 12px;
+      border-radius: 4px;
+      font: 12px Arial, sans-serif;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div id="legend">
+  <h4>Inspection history</h4>
+  <div class="legend-row"><div class="legend-dot" style="background:#4CAF50"></div> All Pass</div>
+  <div class="legend-row"><div class="legend-dot" style="background:#FF9800"></div> Conditional Pass</div>
+  <div class="legend-row"><div class="legend-dot" style="background:#F44336"></div> Closed</div>
+</div>
+
+<div id="status-bar">Loading data…</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
+<script>
+  const STATUS_COLORS = {
+    'Pass': '#4CAF50',
+    'Conditional Pass': '#FF9800',
+    'Closed': '#F44336',
+  };
+
+  const map = L.map('map').setView([43.7, -79.4], 12);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 19,
+  }).addTo(map);
+
+  const clusterGroup = L.markerClusterGroup({ chunkedLoading: true });
+  map.addLayer(clusterGroup);
+
+  const statusBar = document.getElementById('status-bar');
+  let allFeatures = [];
+
+  function colorFor(status) {
+    return STATUS_COLORS[status] || '#888888';
+  }
+
+  function updateMarkers() {
+    clusterGroup.clearLayers();
+    const bounds = map.getBounds();
+    const layers = [];
+
+    for (const feature of allFeatures) {
+      const [lng, lat] = feature.geometry.coordinates;
+      if (!bounds.contains([lat, lng])) continue;
+
+      const p = feature.properties;
+      const color = colorFor(p.worstStatus);
+
+      const marker = L.circleMarker([lat, lng], {
+        radius: 7,
+        color: color,
+        fillColor: color,
+        fillOpacity: 0.85,
+        weight: 1,
+      });
+
+      marker.bindPopup(
+        `<b>${p.estName}</b><br>` +
+        `${p.address}<br><br>` +
+        `Status: <b style="color:${color}">${p.worstStatus}</b><br>` +
+        `Pass: ${p.pass_count} &nbsp;|&nbsp; ` +
+        `Cond.: ${p.conditional_count} &nbsp;|&nbsp; ` +
+        `Closed: ${p.closed_count}<br>` +
+        `Last inspected: ${p.lastInspection}`
+      );
+
+      layers.push(marker);
+    }
+
+    clusterGroup.addLayers(layers);
+    statusBar.textContent = `${layers.length} establishment${layers.length !== 1 ? 's' : ''} in view`;
+  }
+
+  async function loadData() {
+    try {
+      const resp = await fetch('data/establishments.json');
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const fc = await resp.json();
+      allFeatures = fc.features;
+      statusBar.textContent = `${allFeatures.length} establishments loaded`;
+      updateMarkers();
+      map.on('moveend', updateMarkers);
+    } catch (err) {
+      statusBar.textContent = 'Error loading data';
+      console.error(err);
+    }
+  }
+
+  loadData();
+</script>
+</body>
+</html>
