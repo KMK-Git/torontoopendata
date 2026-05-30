@@ -44,6 +44,108 @@
       pointer-events: none;
       white-space: nowrap;
     }
+
+    #list-btn {
+      position: absolute;
+      bottom: 30px;
+      left: 10px;
+      z-index: 1000;
+      background: white;
+      border: 2px solid rgba(0,0,0,0.2);
+      padding: 7px 12px;
+      border-radius: 6px;
+      box-shadow: 0 1px 5px rgba(0,0,0,0.25);
+      font: 13px/1 Arial, sans-serif;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.15s;
+    }
+    #list-btn:hover { background: #f0f0f0; }
+    #list-btn .list-icon { font-size: 15px; }
+
+    #list-panel {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 300px;
+      height: 100%;
+      z-index: 1001;
+      background: white;
+      box-shadow: 3px 0 10px rgba(0,0,0,0.18);
+      display: flex;
+      flex-direction: column;
+      transform: translateX(-100%);
+      transition: transform 0.25s ease;
+    }
+    #list-panel.open { transform: translateX(0); }
+
+    #list-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 14px;
+      border-bottom: 1px solid #e0e0e0;
+      font: bold 14px Arial, sans-serif;
+      flex-shrink: 0;
+    }
+    #list-close {
+      background: none;
+      border: none;
+      font-size: 18px;
+      cursor: pointer;
+      padding: 0 2px;
+      line-height: 1;
+      color: #555;
+    }
+    #list-close:hover { color: #000; }
+
+    #list-search {
+      margin: 10px 10px 6px;
+      padding: 7px 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font: 13px Arial, sans-serif;
+      outline: none;
+      flex-shrink: 0;
+    }
+    #list-search:focus { border-color: #2196F3; }
+
+    #list-count {
+      padding: 2px 10px 6px;
+      font: 11px Arial, sans-serif;
+      color: #888;
+      flex-shrink: 0;
+    }
+
+    #list-items {
+      flex: 1;
+      overflow-y: auto;
+      border-top: 1px solid #efefef;
+    }
+    .list-item {
+      padding: 9px 14px 9px 10px;
+      border-bottom: 1px solid #f0f0f0;
+      border-left: 4px solid transparent;
+      cursor: pointer;
+    }
+    .list-item:hover { background: #f7f7f7; }
+    .list-item-name {
+      font: 600 13px Arial, sans-serif;
+      margin-bottom: 2px;
+      word-break: break-word;
+    }
+    .list-item-addr {
+      font: 11px Arial, sans-serif;
+      color: #777;
+    }
+    .list-empty {
+      padding: 24px 14px;
+      text-align: center;
+      color: #aaa;
+      font: 13px Arial, sans-serif;
+    }
   </style>
 </head>
 <body>
@@ -58,6 +160,20 @@
 </div>
 
 <div id="status-bar">Loading data…</div>
+
+<button id="list-btn" title="Show restaurant list">
+  <span class="list-icon">&#9776;</span> List
+</button>
+
+<div id="list-panel">
+  <div id="list-header">
+    <span>Restaurants in view</span>
+    <button id="list-close" title="Close">&#x2715;</button>
+  </div>
+  <input type="text" id="list-search" placeholder="Search by name…" autocomplete="off">
+  <div id="list-count"></div>
+  <div id="list-items"></div>
+</div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
@@ -80,7 +196,16 @@
   map.addLayer(clusterGroup);
 
   const statusBar = document.getElementById('status-bar');
+  const listBtn = document.getElementById('list-btn');
+  const listPanel = document.getElementById('list-panel');
+  const listClose = document.getElementById('list-close');
+  const listSearch = document.getElementById('list-search');
+  const listCount = document.getElementById('list-count');
+  const listItems = document.getElementById('list-items');
+
   let allFeatures = [];
+  let currentViewFeatures = [];
+  const featureMarkerMap = new Map();
 
   function colorFor(status) {
     return STATUS_COLORS[status] || '#888888';
@@ -90,6 +215,8 @@
     clusterGroup.clearLayers();
     const bounds = map.getBounds();
     const layers = [];
+    currentViewFeatures = [];
+    featureMarkerMap.clear();
 
     for (const feature of allFeatures) {
       const [lng, lat] = feature.geometry.coordinates;
@@ -116,12 +243,65 @@
         `Last inspected: ${p.lastInspection}`
       );
 
+      featureMarkerMap.set(feature, marker);
+      currentViewFeatures.push(feature);
       layers.push(marker);
     }
 
     clusterGroup.addLayers(layers);
     statusBar.textContent = `${layers.length} establishment${layers.length !== 1 ? 's' : ''} in view`;
+
+    if (listPanel.classList.contains('open')) renderList(listSearch.value);
   }
+
+  function renderList(query) {
+    const q = (query || '').trim().toLowerCase();
+    const filtered = q
+      ? currentViewFeatures.filter(f => f.properties.estName.toLowerCase().includes(q))
+      : currentViewFeatures;
+
+    listCount.textContent = `${filtered.length} of ${currentViewFeatures.length} establishment${currentViewFeatures.length !== 1 ? 's' : ''}`;
+    listItems.innerHTML = '';
+
+    if (filtered.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'list-empty';
+      empty.textContent = q ? 'No matches found' : 'No establishments in view';
+      listItems.appendChild(empty);
+      return;
+    }
+
+    filtered.forEach(feature => {
+      const p = feature.properties;
+      const color = colorFor(p.worstStatus);
+      const item = document.createElement('div');
+      item.className = 'list-item';
+      item.style.borderLeftColor = color;
+      item.innerHTML =
+        `<div class="list-item-name">${p.estName}</div>` +
+        `<div class="list-item-addr">${p.address}</div>`;
+      item.addEventListener('click', () => {
+        const marker = featureMarkerMap.get(feature);
+        if (marker) clusterGroup.zoomToShowLayer(marker, () => marker.openPopup());
+      });
+      listItems.appendChild(item);
+    });
+  }
+
+  function openPanel() {
+    listPanel.classList.add('open');
+    listSearch.value = '';
+    renderList('');
+    listSearch.focus();
+  }
+
+  function closePanel() {
+    listPanel.classList.remove('open');
+  }
+
+  listBtn.addEventListener('click', openPanel);
+  listClose.addEventListener('click', closePanel);
+  listSearch.addEventListener('input', () => renderList(listSearch.value));
 
   async function loadData() {
     try {
