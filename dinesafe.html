@@ -207,12 +207,14 @@
   let allFeatures = [];
   let currentViewFeatures = [];
   const featureMarkerMap = new Map();
+  let zoomingToLayer = false;
 
   function colorFor(status) {
     return STATUS_COLORS[status] || '#888888';
   }
 
   function updateMarkers() {
+    if (zoomingToLayer) return;
     clusterGroup.clearLayers();
     const bounds = map.getBounds();
     const layers = [];
@@ -283,7 +285,12 @@
         `<div class="list-item-addr">${p.address}</div>`;
       item.addEventListener('click', () => {
         const marker = featureMarkerMap.get(feature);
-        if (marker) clusterGroup.zoomToShowLayer(marker, () => marker.openPopup());
+        if (!marker) return;
+        zoomingToLayer = true;
+        clusterGroup.zoomToShowLayer(marker, () => {
+          marker.openPopup();
+          zoomingToLayer = false;
+        });
       });
       listItems.appendChild(item);
     });
