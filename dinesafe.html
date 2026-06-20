@@ -45,6 +45,27 @@
       white-space: nowrap;
     }
 
+    #locate-btn {
+      position: absolute;
+      bottom: 72px;
+      left: 10px;
+      z-index: 1000;
+      background: white;
+      border: 2px solid rgba(0,0,0,0.2);
+      padding: 5px 10px;
+      border-radius: 6px;
+      box-shadow: 0 1px 5px rgba(0,0,0,0.25);
+      font: 16px/1 Arial, sans-serif;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.15s;
+      touch-action: manipulation;
+    }
+    #locate-btn:hover:not(:disabled) { background: #f0f0f0; }
+    #locate-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
     #list-btn {
       position: absolute;
       bottom: 30px;
@@ -161,6 +182,8 @@
 </div>
 
 <div id="status-bar">Loading data…</div>
+
+<button id="locate-btn" title="Zoom to my location">&#8982; My Location</button>
 
 <button id="list-btn" title="Show restaurant list">
   <span class="list-icon">&#9776;</span> List
@@ -305,6 +328,31 @@
 
   function closePanel() {
     listPanel.classList.remove('open');
+  }
+
+  const locateBtn = document.getElementById('locate-btn');
+
+  if (!navigator.geolocation) {
+    locateBtn.disabled = true;
+    locateBtn.title = 'Geolocation is not supported by this browser';
+  } else {
+    locateBtn.addEventListener('click', () => {
+      locateBtn.disabled = true;
+      locateBtn.textContent = 'Locating…';
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          map.flyTo([pos.coords.latitude, pos.coords.longitude], 17);
+          locateBtn.disabled = false;
+          locateBtn.innerHTML = '&#8982; My Location';
+        },
+        () => {
+          statusBar.textContent = 'Location access denied or unavailable';
+          locateBtn.disabled = false;
+          locateBtn.innerHTML = '&#8982; My Location';
+        },
+        { timeout: 10000 }
+      );
+    });
   }
 
   listBtn.addEventListener('click', openPanel);
